@@ -127,6 +127,12 @@ module OmniAuth
             return {}
           end
 
+          # Debug: Log actual API response fields
+          if defined?(Rails) && Rails.logger
+            Rails.logger.info "DingTalk API返回字段: #{data.keys.inspect}"
+            Rails.logger.info "DingTalk API完整响应: #{data.inspect}"
+          end
+
           data
         rescue ::OAuth2::Error => e
           log_error("DingTalk user info OAuth error: #{e.message}")

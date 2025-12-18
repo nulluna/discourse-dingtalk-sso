@@ -8,7 +8,7 @@ en:
     dingtalk_user_info_url: "DingTalk user info endpoint URL"
     dingtalk_scope: "OAuth authorization scope (default: openid)"
     dingtalk_button_title: "Login button text"
-    dingtalk_authorize_signup: "Allow automatic signup via DingTalk"
+    dingtalk_authorize_signup: "Allow automatic signup via DingTalk (independent of global 'Allow new registrations' setting, users are logged in directly without signup page)"
     dingtalk_overrides_email: "Allow DingTalk email to override local email"
     dingtalk_debug_auth: "Enable OAuth debug logging"
     dingtalk_allow_virtual_email: "Allow virtual email for registration"

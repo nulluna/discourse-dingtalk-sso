@@ -8,7 +8,7 @@ zh_CN:
     dingtalk_user_info_url: "钉钉用户信息端点URL"
     dingtalk_scope: "OAuth授权范围(默认: openid)"
     dingtalk_button_title: "登录按钮显示文本"
-    dingtalk_authorize_signup: "允许通过钉钉自动注册新用户"
+    dingtalk_authorize_signup: "允许钉钉用户自动注册（独立于全局'Allow new registrations'设置,启用后钉钉用户可直接登录无需经过注册页面）"
     dingtalk_overrides_email: "允许钉钉邮箱覆盖本地邮箱"
     dingtalk_debug_auth: "启用OAuth调试日志"
     dingtalk_allow_virtual_email: "允许使用虚拟邮箱注册"

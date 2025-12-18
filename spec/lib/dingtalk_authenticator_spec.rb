@@ -67,6 +67,42 @@ describe DingtalkAuthenticator do
     end
   end
 
+  describe "#authorize_new_users?" do
+    context "when dingtalk_authorize_signup is true" do
+      before { SiteSetting.dingtalk_authorize_signup = true }
+
+      it "returns true" do
+        expect(authenticator.authorize_new_users?).to be true
+      end
+    end
+
+    context "when dingtalk_authorize_signup is false" do
+      before { SiteSetting.dingtalk_authorize_signup = false }
+
+      it "returns false" do
+        expect(authenticator.authorize_new_users?).to be false
+      end
+    end
+  end
+
+  describe "#always_update_user_email?" do
+    context "when dingtalk_overrides_email is true" do
+      before { SiteSetting.dingtalk_overrides_email = true }
+
+      it "returns true" do
+        expect(authenticator.always_update_user_email?).to be true
+      end
+    end
+
+    context "when dingtalk_overrides_email is false" do
+      before { SiteSetting.dingtalk_overrides_email = false }
+
+      it "returns false" do
+        expect(authenticator.always_update_user_email?).to be false
+      end
+    end
+  end
+
   describe "#primary_email_verified?" do
     context "when email is present" do
       it "returns true" do

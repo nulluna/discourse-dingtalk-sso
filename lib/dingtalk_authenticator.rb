@@ -19,6 +19,17 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     SiteSetting.dingtalk_enabled
   end
 
+  # 覆盖全局注册设置,允许钉钉用户独立注册
+  # Override global registration setting to allow DingTalk users to register independently
+  def authorize_new_users?
+    SiteSetting.dingtalk_authorize_signup
+  end
+
+  # 总是更新用户邮箱(当钉钉邮箱变更时)
+  def always_update_user_email?
+    SiteSetting.dingtalk_overrides_email
+  end
+
   def primary_email_verified?(auth_token)
     # DingTalk emails from enterprise apps are considered verified
     auth_token.dig(:info, :email).present?

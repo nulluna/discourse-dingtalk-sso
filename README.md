@@ -123,12 +123,50 @@ https://your-discourse-domain.com/auth/dingtalk/callback
 | `dingtalk_user_info_url` | String | `https://api.dingtalk.com/v1.0/contact/users/me` | 用户信息端点 |
 | `dingtalk_scope` | String | `openid` | OAuth授权范围 |
 | `dingtalk_button_title` | String | `使用钉钉登录` | 登录按钮显示文本 |
-| `dingtalk_authorize_signup` | Boolean | `false` | 允许通过钉钉自动注册 |
+| `dingtalk_authorize_signup` | Boolean | `false` | ⭐️ **重要** 允许钉钉用户自动注册（独立于全局设置） |
 | `dingtalk_overrides_email` | Boolean | `false` | 允许钉钉邮箱覆盖本地邮箱 |
 | `dingtalk_debug_auth` | Boolean | `false` | 启用OAuth调试日志(隐藏) |
 | `dingtalk_allow_virtual_email` | Boolean | `true` | **新增** 允许虚拟邮箱(无邮箱用户可注册) |
 | `dingtalk_virtual_email_domain` | String | `virtual.local` | **新增** 虚拟邮箱域名后缀 |
 | `dingtalk_username_template` | String | `dingtalk_{hash6}` | **新增** 用户名生成模板 |
+
+---
+
+## 🔐 SSO 自动注册机制 / SSO Auto-Registration Mechanism
+
+### 重要说明
+
+**`dingtalk_authorize_signup` 配置独立于 Discourse 全局的 `Allow new registrations` 设置！**
+
+### 工作原理
+
+1. **全局设置可以是 `false`**
+   即使 Discourse 管理后台的 `Allow new registrations` 设置为禁止注册，钉钉用户仍可通过SSO登录
+
+2. **钉钉用户直接创建账户**
+   - 启用 `dingtalk_authorize_signup` 后，钉钉用户 SSO 认证成功会**直接登录**
+   - **无需跳转到注册页面**，无需手动确认
+   - 自动创建 Discourse 账户
+
+3. **配置建议**
+
+   | 场景 | `Allow new registrations` | `dingtalk_authorize_signup` | 效果 |
+   |------|---------------------------|----------------------------|------|
+   | 仅允许钉钉用户 | `false` ❌ | `true` ✅ | 只有钉钉认证用户可登录 |
+   | 全面开放 | `true` ✅ | `true` ✅ | 钉钉用户和普通用户都可注册 |
+   | 严格控制 | `false` ❌ | `false` ❌ | 钉钉用户也需要邀请 |
+
+### 技术实现
+
+插件通过实现 `authorize_new_users?` 方法覆盖了全局注册限制：
+
+```ruby
+def authorize_new_users?
+  SiteSetting.dingtalk_authorize_signup
+end
+```
+
+这样即使全局禁止注册，钉钉用户仍可通过 SSO 自动创建账户。
 
 ---
 
