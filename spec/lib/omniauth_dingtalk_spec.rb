@@ -165,7 +165,7 @@ describe OmniAuth::Strategies::Dingtalk do
       end
 
       it "returns empty hash and logs error" do
-        expect(Rails.logger).to receive(:error).with(/DingTalk API error/)
+        expect(strategy).to receive(:log_error).with(/DingTalk API error/)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
       end
@@ -177,7 +177,7 @@ describe OmniAuth::Strategies::Dingtalk do
       end
 
       it "returns empty hash and logs error" do
-        expect(Rails.logger).to receive(:error).with(/OAuth error/)
+        expect(strategy).to receive(:log_error).with(/user info OAuth error/)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
       end
@@ -190,7 +190,7 @@ describe OmniAuth::Strategies::Dingtalk do
       end
 
       it "returns empty hash and logs error" do
-        expect(Rails.logger).to receive(:error).with(/parse error/)
+        expect(strategy).to receive(:log_error).with(/user info parse error/)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
       end

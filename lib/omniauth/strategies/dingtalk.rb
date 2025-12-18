@@ -24,6 +24,7 @@ module OmniAuth
         verifier = request.params["code"]
         return nil unless verifier.present?
 
+        response = nil
         params = {
           clientId: client.id,
           clientSecret: client.secret,
@@ -42,9 +43,9 @@ module OmniAuth
         token_data = JSON.parse(response.body)
 
         # Check for errors in response
-        if token_data["errcode"]
+        if token_data["errcode"] && token_data["errcode"] != 0
           error_msg = "DingTalk token error: #{token_data['errmsg']} (code: #{token_data['errcode']})"
-          Rails.logger.error error_msg
+          log_error(error_msg)
           raise ::OAuth2::Error.new(response)
         end
 
@@ -57,18 +58,23 @@ module OmniAuth
         }.merge(token_data))
 
       rescue ::OAuth2::Error => e
-        Rails.logger.error "DingTalk OAuth token error: #{e.message}"
+        log_error("DingTalk OAuth token error: #{e.message}")
         raise e
       rescue JSON::ParserError => e
-        Rails.logger.error "DingTalk token response parse error: #{e.message}"
-        raise ::OAuth2::Error.new(response)
+        log_error("DingTalk token response parse error: #{e.message}")
+        raise ::OAuth2::Error.new(response || nil)
       rescue StandardError => e
-        Rails.logger.error "DingTalk token request failed: #{e.message}"
-        raise ::OAuth2::Error.new(nil)
+        log_error("DingTalk token request failed: #{e.class} - #{e.message}")
+        raise ::OAuth2::Error.new(response || nil)
       end
 
       def token_url
-        options[:client_options][:token_url] || "/v1.0/oauth2/userAccessToken"
+        # Use absolute URL for token request
+        url = options[:client_options][:token_url]
+        return url if url&.start_with?("http")
+
+        # Fallback to relative path if absolute URL not provided
+        "/v1.0/oauth2/userAccessToken"
       end
 
       # Override request method to handle DingTalk's JSON body format
@@ -117,19 +123,19 @@ module OmniAuth
 
           # Check for DingTalk API errors
           if data["errcode"] && data["errcode"] != 0
-            Rails.logger.error "DingTalk API error: #{data['errmsg']} (code: #{data['errcode']})"
+            log_error("DingTalk API error: #{data['errmsg']} (code: #{data['errcode']})")
             return {}
           end
 
           data
         rescue ::OAuth2::Error => e
-          Rails.logger.error "DingTalk user info OAuth error: #{e.message}"
+          log_error("DingTalk user info OAuth error: #{e.message}")
           {}
         rescue JSON::ParserError => e
-          Rails.logger.error "DingTalk user info parse error: #{e.message}"
+          log_error("DingTalk user info parse error: #{e.message}")
           {}
         rescue StandardError => e
-          Rails.logger.error "DingTalk user info fetch failed: #{e.class} - #{e.message}"
+          log_error("DingTalk user info fetch failed: #{e.class} - #{e.message}")
           {}
         end
       end
@@ -146,6 +152,14 @@ module OmniAuth
           hash[key.to_sym] = value.is_a?(Hash) ? deep_symbolize(value) : value
         end
         hash
+      end
+
+      def log_error(message)
+        if defined?(Rails) && Rails.respond_to?(:logger)
+          Rails.logger.error(message)
+        else
+          puts "[DingTalk OAuth Error] #{message}"
+        end
       end
     end
   end
