@@ -1,0 +1,6 @@
+zh_CN:
+  js:
+    login:
+      dingtalk:
+        title: "使用钉钉登录"
+        message: "正在通过钉钉进行身份验证..."

@@ -1,4 +1,52 @@
-TODO_plugin_name:
-  plugin_name_enabled:
+login:
+  dingtalk_enabled:
     default: false
     client: true
+    description: "启用钉钉OAuth2.0登录 / Enable DingTalk OAuth2.0 login"
+
+  dingtalk_client_id:
+    default: ""
+    regex: "^[a-zA-Z0-9_-]+$"
+    description: "钉钉应用Client ID / DingTalk App Client ID"
+
+  dingtalk_client_secret:
+    default: ""
+    secret: true
+    description: "钉钉应用Client Secret / DingTalk App Client Secret"
+
+  dingtalk_authorize_url:
+    default: "https://login.dingtalk.com/oauth2/auth"
+    description: "钉钉OAuth授权端点 / DingTalk OAuth authorization endpoint"
+
+  dingtalk_token_url:
+    default: "https://api.dingtalk.com/v1.0/oauth2/userAccessToken"
+    description: "钉钉Token获取端点 / DingTalk token endpoint"
+
+  dingtalk_user_info_url:
+    default: "https://api.dingtalk.com/v1.0/contact/users/me"
+    description: "钉钉用户信息端点 / DingTalk user info endpoint"
+
+  dingtalk_scope:
+    default: "openid"
+    description: "OAuth授权范围 / OAuth authorization scope"
+
+  dingtalk_button_title:
+    default: "with DingTalk"
+    locale_default:
+      zh_CN: "使用钉钉登录"
+      en: "with DingTalk"
+    description: "登录按钮显示文本 / Login button text"
+
+  dingtalk_authorize_signup:
+    default: false
+    client: true
+    description: "允许钉钉用户自动注册 / Allow automatic signup via DingTalk"
+
+  dingtalk_overrides_email:
+    default: false
+    description: "允许钉钉覆盖本地邮箱 / Allow DingTalk to override local email"
+
+  dingtalk_debug_auth:
+    default: false
+    hidden: true
+    description: "启用OAuth调试日志 / Enable OAuth debug logging"

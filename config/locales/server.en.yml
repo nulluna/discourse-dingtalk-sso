@@ -1,1 +1,22 @@
 en:
+  site_settings:
+    dingtalk_enabled: "Enable DingTalk login"
+    dingtalk_client_id: "DingTalk App Client ID"
+    dingtalk_client_secret: "DingTalk App Client Secret"
+    dingtalk_authorize_url: "DingTalk OAuth authorization endpoint URL"
+    dingtalk_token_url: "DingTalk token endpoint URL"
+    dingtalk_user_info_url: "DingTalk user info endpoint URL"
+    dingtalk_scope: "OAuth authorization scope (default: openid)"
+    dingtalk_button_title: "Login button text"
+    dingtalk_authorize_signup: "Allow automatic signup via DingTalk"
+    dingtalk_overrides_email: "Allow DingTalk email to override local email"
+    dingtalk_debug_auth: "Enable OAuth debug logging"
+
+  login:
+    dingtalk:
+      title: "Login with DingTalk"
+      description: "DingTalk account (Union ID: %{union_id})"
+      error: "DingTalk login failed, please try again later"
+      missing_email: "Cannot retrieve email from DingTalk, please contact administrator"
+      missing_client_id: "DingTalk Client ID is not configured, please contact administrator"
+      missing_client_secret: "DingTalk Client Secret is not configured, please contact administrator"

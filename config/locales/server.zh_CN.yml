@@ -1,0 +1,22 @@
+zh_CN:
+  site_settings:
+    dingtalk_enabled: "启用钉钉登录"
+    dingtalk_client_id: "钉钉应用 Client ID"
+    dingtalk_client_secret: "钉钉应用 Client Secret"
+    dingtalk_authorize_url: "钉钉OAuth授权端点URL"
+    dingtalk_token_url: "钉钉Token获取端点URL"
+    dingtalk_user_info_url: "钉钉用户信息端点URL"
+    dingtalk_scope: "OAuth授权范围(默认: openid)"
+    dingtalk_button_title: "登录按钮显示文本"
+    dingtalk_authorize_signup: "允许通过钉钉自动注册新用户"
+    dingtalk_overrides_email: "允许钉钉邮箱覆盖本地邮箱"
+    dingtalk_debug_auth: "启用OAuth调试日志"
+
+  login:
+    dingtalk:
+      title: "使用钉钉登录"
+      description: "钉钉账号 (Union ID: %{union_id})"
+      error: "钉钉登录失败,请稍后重试"
+      missing_email: "无法从钉钉获取邮箱地址,请联系管理员"
+      missing_client_id: "钉钉Client ID未配置,请联系管理员"
+      missing_client_secret: "钉钉Client Secret未配置,请联系管理员"
