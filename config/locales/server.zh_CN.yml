@@ -11,12 +11,17 @@ zh_CN:
     dingtalk_authorize_signup: "允许通过钉钉自动注册新用户"
     dingtalk_overrides_email: "允许钉钉邮箱覆盖本地邮箱"
     dingtalk_debug_auth: "启用OAuth调试日志"
+    dingtalk_allow_virtual_email: "允许使用虚拟邮箱注册"
+    dingtalk_virtual_email_domain: "虚拟邮箱域名后缀"
+    dingtalk_mobile_email_domain: "手机号虚拟邮箱域名后缀"
+    dingtalk_username_template: "用户名生成模板（支持变量：{name}, {hash6}, {hash8}, {unionid}）"
 
   login:
     dingtalk:
       title: "使用钉钉登录"
       description: "钉钉账号 (Union ID: %{union_id})"
       error: "钉钉登录失败,请稍后重试"
-      missing_email: "无法从钉钉获取邮箱地址,请联系管理员"
+      missing_email: "您的钉钉账号未配置邮箱，系统已为您分配虚拟邮箱"
+      virtual_email_notice: "您使用的是虚拟邮箱，无法接收邮件通知，请依赖钉钉通知"
       missing_client_id: "钉钉Client ID未配置,请联系管理员"
       missing_client_secret: "钉钉Client Secret未配置,请联系管理员"

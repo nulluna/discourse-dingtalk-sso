@@ -109,6 +109,20 @@ for setting in "${required_settings[@]}"; do
     fi
 done
 
+# 检查虚拟邮箱配置
+optional_settings=(
+    "dingtalk_allow_virtual_email"
+    "dingtalk_virtual_email_domain"
+    "dingtalk_mobile_email_domain"
+    "dingtalk_username_template"
+)
+
+for setting in "${optional_settings[@]}"; do
+    if grep -q "$setting:" config/settings.yml; then
+        check_pass "虚拟邮箱配置存在: $setting"
+    fi
+done
+
 echo ""
 
 # 5. 检查国际化

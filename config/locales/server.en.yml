@@ -11,12 +11,17 @@ en:
     dingtalk_authorize_signup: "Allow automatic signup via DingTalk"
     dingtalk_overrides_email: "Allow DingTalk email to override local email"
     dingtalk_debug_auth: "Enable OAuth debug logging"
+    dingtalk_allow_virtual_email: "Allow virtual email for registration"
+    dingtalk_virtual_email_domain: "Virtual email domain suffix"
+    dingtalk_mobile_email_domain: "Mobile number virtual email domain suffix"
+    dingtalk_username_template: "Username generation template (supports: {name}, {hash6}, {hash8}, {unionid})"
 
   login:
     dingtalk:
       title: "Login with DingTalk"
       description: "DingTalk account (Union ID: %{union_id})"
       error: "DingTalk login failed, please try again later"
-      missing_email: "Cannot retrieve email from DingTalk, please contact administrator"
+      missing_email: "Virtual email assigned as your DingTalk account has no email configured"
+      virtual_email_notice: "You're using a virtual email and won't receive email notifications. Please rely on DingTalk notifications"
       missing_client_id: "DingTalk Client ID is not configured, please contact administrator"
       missing_client_secret: "DingTalk Client Secret is not configured, please contact administrator"

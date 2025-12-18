@@ -151,13 +151,120 @@ describe DingtalkAuthenticator do
       end
     end
 
-    context "when email is missing" do
-      before { auth_hash[:info][:email] = nil }
+    context "virtual email generation" do
+      before do
+        SiteSetting.dingtalk_allow_virtual_email = true
+        SiteSetting.dingtalk_virtual_email_domain = "test.local"
+      end
 
-      it "fails authentication" do
-        result = authenticator.after_authenticate(auth_hash)
-        expect(result.failed).to be true
-        expect(result.failed_reason).to include("email")
+      context "when user has real email" do
+        it "uses real email and marks as valid" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.email).to eq("zhangsan@example.com")
+          expect(result.email_valid).to be true
+          expect(result.failed).to be_falsey
+        end
+      end
+
+      context "when user has no email but has mobile" do
+        before do
+          auth_hash[:info][:email] = nil
+          auth_hash[:info][:phone] = "13800138000"
+        end
+
+        it "generates mobile-based virtual email" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.email).to eq("13800138000@dingtalk.mobile")
+          expect(result.email_valid).to be false
+          expect(result.failed).to be_falsey
+        end
+      end
+
+      context "when user has neither email nor mobile" do
+        before do
+          auth_hash[:info][:email] = nil
+          auth_hash[:info][:phone] = nil
+        end
+
+        it "generates unionId-based virtual email" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.email).to match(/^dingtalk_union_abc123de@test\.local$/)
+          expect(result.email_valid).to be false
+          expect(result.failed).to be_falsey
+        end
+
+        it "uses configured domain" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.email).to end_with("@test.local")
+        end
+      end
+
+      context "when virtual email is disabled" do
+        before do
+          SiteSetting.dingtalk_allow_virtual_email = false
+          auth_hash[:info][:email] = nil
+        end
+
+        it "fails authentication for users without email" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.failed).to be true
+        end
+      end
+    end
+
+    context "username generation from template" do
+      before do
+        SiteSetting.dingtalk_allow_virtual_email = true
+        auth_hash[:info][:nickname] = nil
+        auth_hash[:info][:name] = nil
+      end
+
+      context "with default template dingtalk_{hash6}" do
+        before { SiteSetting.dingtalk_username_template = "dingtalk_{hash6}" }
+
+        it "generates username with 6-char hash" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.username).to match(/^dingtalk_[a-f0-9]{6}$/)
+        end
+
+        it "produces consistent hash for same unionId" do
+          result1 = authenticator.after_authenticate(auth_hash)
+          result2 = authenticator.after_authenticate(auth_hash)
+          expect(result1.username).to eq(result2.username)
+        end
+      end
+
+      context "with name template {name}_{hash6}" do
+        before do
+          SiteSetting.dingtalk_username_template = "{name}_{hash6}"
+          auth_hash[:info][:name] = "Zhang San"
+        end
+
+        it "uses sanitized name in username" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.username).to match(/^zhang_san_[a-f0-9]{6}$/)
+        end
+      end
+
+      context "with {hash8} template" do
+        before { SiteSetting.dingtalk_username_template = "dt_{hash8}" }
+
+        it "generates username with 8-char hash" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.username).to match(/^dt_[a-f0-9]{8}$/)
+        end
+      end
+
+      context "when dingtalk nickname exists and can be sanitized" do
+        before do
+          auth_hash[:info][:nickname] = "valid_nick"
+          SiteSetting.dingtalk_username_template = "dingtalk_{hash6}"
+        end
+
+        it "prefers sanitized nickname over template" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.username).to eq("valid_nick")
+        end
       end
     end
 

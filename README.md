@@ -126,6 +126,55 @@ https://your-discourse-domain.com/auth/dingtalk/callback
 | `dingtalk_authorize_signup` | Boolean | `false` | 允许通过钉钉自动注册 |
 | `dingtalk_overrides_email` | Boolean | `false` | 允许钉钉邮箱覆盖本地邮箱 |
 | `dingtalk_debug_auth` | Boolean | `false` | 启用OAuth调试日志(隐藏) |
+| `dingtalk_allow_virtual_email` | Boolean | `true` | **新增** 允许虚拟邮箱(无邮箱用户可注册) |
+| `dingtalk_virtual_email_domain` | String | `virtual.local` | **新增** 虚拟邮箱域名后缀 |
+| `dingtalk_username_template` | String | `dingtalk_{hash6}` | **新增** 用户名生成模板 |
+
+---
+
+## 📧 虚拟邮箱机制 / Virtual Email Mechanism
+
+### 背景说明 / Background
+
+钉钉企业用户可能没有配置邮箱，但 Discourse 要求用户必须有邮箱字段。本插件通过虚拟邮箱机制解决此问题。
+
+### 邮箱获取优先级 / Email Priority
+
+插件会按以下优先级生成邮箱：
+
+1. **真实邮箱** (email 字段) → `email_valid = true`
+   - 示例: `zhangsan@company.com`
+
+2. **手机号虚拟邮箱** (mobile 字段) → `email_valid = false`
+   - 示例: `13800138000@dingtalk.mobile`
+
+3. **UnionId 虚拟邮箱** (最终降级) → `email_valid = false`
+   - 示例: `dingtalk_union_abc123de@virtual.local`
+
+### 虚拟邮箱配置 / Virtual Email Configuration
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `dingtalk_allow_virtual_email` | `true` | 是否允许虚拟邮箱 |
+| `dingtalk_virtual_email_domain` | `virtual.local` | 虚拟邮箱域名 |
+
+### 用户名生成模板 / Username Template
+
+当钉钉昵称无法转换为有效用户名时，使用模板生成：
+
+| 模板变量 | 说明 | 示例 |
+|----------|------|------|
+| `{name}` | 钉钉姓名(清洗后) | Zhang San → zhang_san |
+| `{hash6}` | UnionID 的 6 位 MD5 hash | a3f5c2 |
+| `{hash8}` | UnionID 的 8 位 MD5 hash | a3f5c287 |
+| `{unionid}` | UnionID 前 16 位 | union_abc123def4 |
+
+**示例配置**:
+- `dingtalk_{hash6}` → `dingtalk_a3f5c2`
+- `{name}_{hash6}` → `zhang_san_a3f5c2`
+- `dt_{hash8}` → `dt_a3f5c287`
+
+⚠️ **注意**: Discourse 会自动处理用户名重复（追加数字后缀）
 
 ---
 

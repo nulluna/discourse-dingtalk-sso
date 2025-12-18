@@ -50,3 +50,24 @@ login:
     default: false
     hidden: true
     description: "启用OAuth调试日志 / Enable OAuth debug logging"
+
+  dingtalk_allow_virtual_email:
+    default: true
+    client: true
+    type: bool
+    description: "允许使用虚拟邮箱注册（钉钉无邮箱用户可注册）/ Allow virtual email for registration (users without email can register)"
+
+  dingtalk_virtual_email_domain:
+    default: "virtual.local"
+    regex: "^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$"
+    description: "虚拟邮箱域名后缀 / Virtual email domain suffix"
+
+  dingtalk_mobile_email_domain:
+    default: "dingtalk.mobile"
+    regex: "^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$"
+    description: "手机号虚拟邮箱域名后缀 / Mobile number virtual email domain suffix"
+
+  dingtalk_username_template:
+    default: "dingtalk_{hash6}"
+    regex: "^[a-z0-9_\\-{\\}]+$"
+    description: "用户名生成模板。支持变量：{name}=姓名, {hash6}=UnionID的6位hash, {hash8}=8位hash, {unionid}=UnionID前16位。Discourse会自动处理重名（追加数字） / Username generation template. Variables: {name}=name, {hash6}=6-char hash, {hash8}=8-char hash, {unionid}=first 16 chars of UnionID. Discourse auto-handles duplicates"

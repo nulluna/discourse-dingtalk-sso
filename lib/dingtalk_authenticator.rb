@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest/md5"
+
 class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def name
     "dingtalk"
@@ -61,35 +63,45 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     # Extract user data from OAuth response
     data = auth_token[:info] || {}
     extra = auth_token.dig(:extra, :raw_info) || {}
+    uid = auth_token[:uid]
 
     # Validate required fields
-    unless auth_token[:uid].present?
+    unless uid.present?
       Rails.logger.error "DingTalk: Missing unionId/uid"
       result.failed = true
       result.failed_reason = I18n.t("login.dingtalk.error")
       return result
     end
 
-    # Set basic user attributes
-    username_candidate = data[:nickname] || data[:name] || extra["nick"]
-    result.username = sanitize_username(username_candidate)
+    # === 用户名生成逻辑 ===
+    # 优先使用钉钉昵称，失败则使用模板生成
+    nickname = extract_dingtalk_nickname(data, extra)
+    result.username = sanitize_username(nickname)
 
-    # Fallback to uid-based username if sanitization fails
     if result.username.blank?
-      result.username = "dingtalk_#{auth_token[:uid][0..15]}"
-      Rails.logger.warn "DingTalk: Generated fallback username: #{result.username}"
+      result.username = generate_username_from_template(uid, data)
+      Rails.logger.warn "DingTalk: Generated username from template: #{result.username}"
     end
 
-    result.name = data[:name] || data[:nickname] || result.username
-    result.email = data[:email]
-    result.email_valid = data[:email].present?
+    # === 姓名直接使用钉钉数据 ===
+    result.name = nickname.presence || result.username
 
-    # Validate email requirement
+    # === 邮箱生成逻辑（渐进式降级） ===
+    email_info = generate_email_with_fallback(data, extra, uid)
+    result.email = email_info[:email]
+    result.email_valid = email_info[:valid]
+
+    # 不再强制要求邮箱，允许虚拟邮箱
     unless result.email.present?
-      Rails.logger.error "DingTalk: Missing email for user #{result.username}"
+      Rails.logger.error "DingTalk: Failed to generate email for user #{result.username}"
       result.failed = true
-      result.failed_reason = I18n.t("login.dingtalk.missing_email")
+      result.failed_reason = I18n.t("login.dingtalk.error")
       return result
+    end
+
+    # 记录虚拟邮箱使用情况
+    unless email_info[:valid]
+      Rails.logger.info "DingTalk: Virtual email assigned for #{result.username}: #{result.email}"
     end
 
     # Store DingTalk-specific data
@@ -180,6 +192,80 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
   private
 
+  # 从钉钉数据中提取昵称/姓名
+  def extract_dingtalk_nickname(data, extra)
+    data[:nickname] || data[:name] || extra["nick"] || ""
+  end
+
+  # 安全截断 uid（确保不会因长度不足而出错）
+  def safe_truncate_uid(uid, length = 16)
+    return uid if uid.length <= length
+    uid[0...length]
+  end
+
+  # 生成邮箱（渐进式降级：真实邮箱 → 手机虚拟邮箱 → UnionId虚拟邮箱）
+  def generate_email_with_fallback(data, extra, uid)
+    # 1. 优先真实邮箱
+    return { email: data[:email], valid: true } if data[:email].present?
+
+    # 检查是否允许虚拟邮箱
+    unless SiteSetting.dingtalk_allow_virtual_email
+      return { email: nil, valid: false }
+    end
+
+    # 2. 手机号虚拟邮箱
+    mobile = data[:phone] || extra["mobile"]
+    if mobile.present?
+      mobile_domain = SiteSetting.dingtalk_mobile_email_domain
+      return {
+        email: "#{mobile}@#{mobile_domain}",
+        valid: false
+      }
+    end
+
+    # 3. UnionId 虚拟邮箱（最终降级）
+    domain = SiteSetting.dingtalk_virtual_email_domain
+    uid_truncated = safe_truncate_uid(uid, 16)
+    {
+      email: "dingtalk_#{uid_truncated}@#{domain}",
+      valid: false
+    }
+  end
+
+  # 根据模板生成用户名
+  def generate_username_from_template(uid, data = {})
+    template = SiteSetting.dingtalk_username_template
+
+    # 计算 UnionID 的 MD5 hash
+    hash_full = Digest::MD5.hexdigest(uid)
+
+    # 获取并清洗姓名
+    name = data[:name] || data[:nickname] || ""
+    sanitized_name = sanitize_username(name)
+
+    # 替换模板变量
+    uid_truncated = safe_truncate_uid(uid, 16)
+    username = template
+      .gsub("{hash6}", hash_full[0..5])
+      .gsub("{hash8}", hash_full[0..7])
+      .gsub("{unionid}", uid_truncated)
+      .gsub("{name}", sanitized_name.presence || "user")
+
+    username = username.downcase
+
+    # 验证生成的用户名，如果无效则使用后备方案
+    sanitized_result = sanitize_username(username)
+    if sanitized_result.blank?
+      # 后备方案：使用 dingtalk_ + hash6
+      username = "dingtalk_#{hash_full[0..5]}"
+      Rails.logger.warn "DingTalk: Template generated invalid username, using fallback: #{username}"
+    else
+      username = sanitized_result
+    end
+
+    username
+  end
+
   def sanitize_username(username)
     return "" if username.blank?
 
@@ -211,10 +297,8 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     # Truncate if too long (max 20 chars for Discourse)
     sanitized = sanitized[0..19] if sanitized.length > 20
 
-    # Ensure minimum length (min 3 chars)
-    while sanitized.length < 3
-      sanitized += "_"
-    end
+    # Ensure minimum length (min 3 chars) using ljust
+    sanitized = sanitized.ljust(3, "_") if sanitized.length < 3
 
     # Return empty if still invalid after all processing
     sanitized =~ /^[a-z0-9][a-z0-9_\-]{1,18}[a-z0-9]$/i ? sanitized : ""
