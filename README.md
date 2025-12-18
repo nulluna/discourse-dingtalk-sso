@@ -43,7 +43,7 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
-          - git clone https://github.com/yourusername/discourse-dingtalk-sso.git
+          - git clone https://github.com/nulluna/discourse-dingtalk-sso.git
 ```
 
 #### 2. 重建容器 / Rebuild Container
@@ -57,7 +57,7 @@ cd /var/discourse
 
 ```bash
 cd discourse/plugins
-git clone https://github.com/yourusername/discourse-dingtalk-sso.git
+git clone https://github.com/nulluna/discourse-dingtalk-sso.git
 bundle install
 ```
 
@@ -281,7 +281,7 @@ spec/
 
 ## 📞 支持与反馈 / Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/discourse-dingtalk-sso/issues)
+- **Issues**: [GitHub Issues](https://github.com/nulluna/discourse-dingtalk-sso/issues)
 - **文档**: [WORKFLOW.md](WORKFLOW.md) - 完整实施工作流
 - **Discourse Meta**: [插件讨论区](https://meta.discourse.org/)
 

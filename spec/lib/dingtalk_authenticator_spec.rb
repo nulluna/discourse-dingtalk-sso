@@ -91,6 +91,7 @@ describe DingtalkAuthenticator do
       expect(result.name).to eq("张三")
       expect(result.email).to eq("zhangsan@example.com")
       expect(result.email_valid).to be true
+      expect(result.failed).to be_falsey
     end
 
     it "stores DingTalk-specific extra data" do
@@ -111,12 +112,96 @@ describe DingtalkAuthenticator do
       end
     end
 
+    context "when username is Chinese" do
+      before { auth_hash[:info][:nickname] = "张三" }
+
+      it "generates fallback username from uid" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.username).to match(/^dingtalk_union_abc123/)
+      end
+    end
+
+    context "when username is empty" do
+      before do
+        auth_hash[:info][:nickname] = nil
+        auth_hash[:info][:name] = nil
+      end
+
+      it "generates username from uid" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.username).to match(/^dingtalk_union_abc123/)
+      end
+    end
+
+    context "when username is too short" do
+      before { auth_hash[:info][:nickname] = "ab" }
+
+      it "pads username to minimum length" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.username.length).to be >= 3
+      end
+    end
+
+    context "when username is too long" do
+      before { auth_hash[:info][:nickname] = "a" * 30 }
+
+      it "truncates username to maximum length" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.username.length).to be <= 20
+      end
+    end
+
+    context "when email is missing" do
+      before { auth_hash[:info][:email] = nil }
+
+      it "fails authentication" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.failed).to be true
+        expect(result.failed_reason).to include("email")
+      end
+    end
+
+    context "when uid is missing" do
+      before { auth_hash[:uid] = nil }
+
+      it "fails authentication" do
+        result = authenticator.after_authenticate(auth_hash)
+        expect(result.failed).to be true
+      end
+    end
+
+    context "when auth_hash is invalid" do
+      it "handles nil auth_hash" do
+        result = authenticator.after_authenticate(nil)
+        expect(result.failed).to be true
+      end
+
+      it "handles empty hash" do
+        result = authenticator.after_authenticate({})
+        expect(result.failed).to be true
+      end
+
+      it "handles malformed data" do
+        result = authenticator.after_authenticate({ info: "invalid" })
+        expect(result.failed).to be true
+      end
+    end
+
     context "when dingtalk_overrides_email is enabled" do
       before { SiteSetting.dingtalk_overrides_email = true }
 
       it "sets skip_email_validation flag" do
         result = authenticator.after_authenticate(auth_hash)
         expect(result.skip_email_validation).to be true
+      end
+    end
+
+    context "with debug mode enabled" do
+      before { SiteSetting.dingtalk_debug_auth = true }
+
+      it "logs authentication details" do
+        expect(Rails.logger).to receive(:info).with(/DingTalk auth result/)
+        authenticator.after_authenticate(auth_hash)
       end
     end
   end

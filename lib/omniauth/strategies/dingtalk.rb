@@ -19,21 +19,56 @@ module OmniAuth
         grant_type: "authorization_code"
 
       # Override token request to use DingTalk's specific JSON format
-      # DingTalk requires clientId/clientSecret instead of client_id/client_secret
+      # DingTalk requires POST with JSON body: clientId, clientSecret, code, grantType
       def build_access_token
         verifier = request.params["code"]
-        client.auth_code.get_token(
-          verifier,
-          {
-            redirect_uri: callback_url,
-            client_id: client.id,
-            client_secret: client.secret
-          }.merge(token_params.to_hash(symbolize_keys: true)),
-          deep_symbolize(options.auth_token_params)
-        )
+        return nil unless verifier.present?
+
+        params = {
+          clientId: client.id,
+          clientSecret: client.secret,
+          code: verifier,
+          grantType: "authorization_code"
+        }
+
+        response = client.request(:post, token_url, {
+          body: params.to_json,
+          headers: {
+            "Content-Type" => "application/json",
+            "Accept" => "application/json"
+          }
+        })
+
+        token_data = JSON.parse(response.body)
+
+        # Check for errors in response
+        if token_data["errcode"]
+          error_msg = "DingTalk token error: #{token_data['errmsg']} (code: #{token_data['errcode']})"
+          Rails.logger.error error_msg
+          raise ::OAuth2::Error.new(response)
+        end
+
+        # Build OAuth2 access token from DingTalk response
+        ::OAuth2::AccessToken.from_hash(client, {
+          access_token: token_data["accessToken"],
+          refresh_token: token_data["refreshToken"],
+          expires_in: token_data["expireIn"],
+          corp_id: token_data["corpId"]
+        }.merge(token_data))
+
       rescue ::OAuth2::Error => e
         Rails.logger.error "DingTalk OAuth token error: #{e.message}"
         raise e
+      rescue JSON::ParserError => e
+        Rails.logger.error "DingTalk token response parse error: #{e.message}"
+        raise ::OAuth2::Error.new(response)
+      rescue StandardError => e
+        Rails.logger.error "DingTalk token request failed: #{e.message}"
+        raise ::OAuth2::Error.new(nil)
+      end
+
+      def token_url
+        options[:client_options][:token_url] || "/v1.0/oauth2/userAccessToken"
       end
 
       # Override request method to handle DingTalk's JSON body format
@@ -48,26 +83,28 @@ module OmniAuth
         )
       end
 
-      uid { raw_info["unionId"] }
+      uid { raw_info["unionId"] || raw_info["openId"] }
 
       info do
         {
-          name: raw_info["nick"],
+          name: raw_info["nick"] || raw_info["name"],
           email: raw_info["email"],
           phone: raw_info["mobile"],
-          nickname: raw_info["nick"]
+          nickname: raw_info["nick"] || raw_info["name"]
         }
       end
 
       extra do
         {
           raw_info: raw_info,
-          corp_id: access_token.params["corpId"]
+          corp_id: access_token.params["corpId"] || access_token.params["corp_id"]
         }
       end
 
       def raw_info
         @raw_info ||= begin
+          return {} unless access_token&.token.present?
+
           response = access_token.get(
             "/v1.0/contact/users/me",
             headers: {
@@ -75,9 +112,24 @@ module OmniAuth
               "Content-Type" => "application/json"
             }
           )
-          JSON.parse(response.body)
-        rescue ::OAuth2::Error, JSON::ParserError => e
-          Rails.logger.error "DingTalk user info fetch error: #{e.message}"
+
+          data = JSON.parse(response.body)
+
+          # Check for DingTalk API errors
+          if data["errcode"] && data["errcode"] != 0
+            Rails.logger.error "DingTalk API error: #{data['errmsg']} (code: #{data['errcode']})"
+            return {}
+          end
+
+          data
+        rescue ::OAuth2::Error => e
+          Rails.logger.error "DingTalk user info OAuth error: #{e.message}"
+          {}
+        rescue JSON::ParserError => e
+          Rails.logger.error "DingTalk user info parse error: #{e.message}"
+          {}
+        rescue StandardError => e
+          Rails.logger.error "DingTalk user info fetch failed: #{e.class} - #{e.message}"
           {}
         end
       end

@@ -50,15 +50,47 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def after_authenticate(auth_token, existing_account: nil)
     result = Auth::Result.new
 
+    # Validate auth_token structure
+    unless auth_token.is_a?(Hash) && auth_token[:uid].present?
+      Rails.logger.error "DingTalk: Invalid auth_token structure"
+      result.failed = true
+      result.failed_reason = I18n.t("login.dingtalk.error")
+      return result
+    end
+
     # Extract user data from OAuth response
-    data = auth_token[:info]
+    data = auth_token[:info] || {}
     extra = auth_token.dig(:extra, :raw_info) || {}
 
+    # Validate required fields
+    unless auth_token[:uid].present?
+      Rails.logger.error "DingTalk: Missing unionId/uid"
+      result.failed = true
+      result.failed_reason = I18n.t("login.dingtalk.error")
+      return result
+    end
+
     # Set basic user attributes
-    result.username = sanitize_username(data[:nickname] || data[:name])
-    result.name = data[:name]
+    username_candidate = data[:nickname] || data[:name] || extra["nick"]
+    result.username = sanitize_username(username_candidate)
+
+    # Fallback to uid-based username if sanitization fails
+    if result.username.blank?
+      result.username = "dingtalk_#{auth_token[:uid][0..15]}"
+      Rails.logger.warn "DingTalk: Generated fallback username: #{result.username}"
+    end
+
+    result.name = data[:name] || data[:nickname] || result.username
     result.email = data[:email]
     result.email_valid = data[:email].present?
+
+    # Validate email requirement
+    unless result.email.present?
+      Rails.logger.error "DingTalk: Missing email for user #{result.username}"
+      result.failed = true
+      result.failed_reason = I18n.t("login.dingtalk.missing_email")
+      return result
+    end
 
     # Store DingTalk-specific data
     result.extra_data = {
@@ -75,9 +107,14 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     # Log authentication for debugging
     if SiteSetting.dingtalk_debug_auth
-      Rails.logger.info "DingTalk auth result: #{result.inspect}"
+      Rails.logger.info "DingTalk auth result: username=#{result.username}, email=#{result.email}, uid=#{auth_token[:uid]}"
     end
 
+    result
+  rescue StandardError => e
+    Rails.logger.error "DingTalk authentication error: #{e.class} - #{e.message}\n#{e.backtrace.join("\n")}"
+    result.failed = true
+    result.failed_reason = I18n.t("login.dingtalk.error")
     result
   end
 
@@ -146,11 +183,40 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def sanitize_username(username)
     return "" if username.blank?
 
-    # Remove special characters and normalize
-    username
+    # Convert to string and normalize
+    username = username.to_s.strip
+
+    # For Chinese or special characters, try to transliterate
+    # Remove special characters, keep alphanumeric, underscore, hyphen
+    sanitized = username
+      .unicode_normalize(:nfkd)
       .gsub(/[^\w\-]/, "_")
       .gsub(/_{2,}/, "_")
-      .gsub(/^_|_$/, "")
+      .gsub(/^_+|_+$/, "")
       .downcase
+
+    # Ensure username meets Discourse requirements
+    # - Length between 3-20 characters
+    # - Starts with alphanumeric
+    # - Only contains alphanumeric, underscore, hyphen
+
+    # Remove leading/trailing underscores/hyphens
+    sanitized = sanitized.gsub(/^[\-_]+|[\-_]+$/, "")
+
+    # Ensure it starts with alphanumeric
+    unless sanitized =~ /^[a-z0-9]/
+      sanitized = "u_#{sanitized}"
+    end
+
+    # Truncate if too long (max 20 chars for Discourse)
+    sanitized = sanitized[0..19] if sanitized.length > 20
+
+    # Ensure minimum length (min 3 chars)
+    while sanitized.length < 3
+      sanitized += "_"
+    end
+
+    # Return empty if still invalid after all processing
+    sanitized =~ /^[a-z0-9][a-z0-9_\-]{1,18}[a-z0-9]$/i ? sanitized : ""
   end
 end
