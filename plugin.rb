@@ -15,9 +15,6 @@ module ::DiscourseDingtalk
 end
 
 require_relative "lib/discourse_dingtalk/engine"
-
-gem "omniauth-oauth2", require: false
-
 require_relative "lib/omniauth/strategies/dingtalk"
 require_relative "lib/dingtalk_authenticator"
 
