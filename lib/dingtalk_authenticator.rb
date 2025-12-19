@@ -31,8 +31,13 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   def primary_email_verified?(auth_token)
-    # DingTalk emails from enterprise apps are considered verified
-    auth_token.dig(:info, :email).present?
+    # Only real DingTalk emails (not virtual ones) are considered verified
+    email = auth_token.dig(:info, :email)
+    return false unless email.present?
+
+    # Check if it's not a virtual email domain
+    !email.end_with?("@#{SiteSetting.dingtalk_mobile_email_domain}") &&
+    !email.end_with?("@#{SiteSetting.dingtalk_virtual_email_domain}")
   end
 
   def register_middleware(omniauth)
@@ -75,14 +80,6 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     data = auth_token[:info] || {}
     extra = auth_token.dig(:extra, :raw_info) || {}
     uid = auth_token[:uid]
-
-    # Validate required fields
-    unless uid.present?
-      Rails.logger.error "DingTalk: Missing unionId/uid"
-      result.failed = true
-      result.failed_reason = I18n.t("login.dingtalk.error")
-      return result
-    end
 
     # === 用户名生成逻辑 ===
     # 优先使用钉钉昵称，失败则使用模板生成
@@ -130,7 +127,8 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     # Log authentication for debugging
     if SiteSetting.dingtalk_debug_auth
-      Rails.logger.info "DingTalk auth result: username=#{result.username}, email=#{result.email}, uid=#{auth_token[:uid]}"
+      Rails.logger.info "DingTalk auth result: username=#{result.username}, email=#{result.email}, email_valid=#{result.email_valid}, uid=#{auth_token[:uid]}"
+      Rails.logger.info "DingTalk auth: will use email matching for existing users" if result.email_valid
     end
 
     result
@@ -142,14 +140,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   def after_create_account(user, auth)
-    # Store mapping between DingTalk unionId and Discourse user
     data = auth[:extra_data]
-
-    ::PluginStore.set(
-      "dingtalk_sso",
-      "dingtalk_union_id_#{data[:dingtalk_union_id]}",
-      { user_id: user.id, created_at: Time.now }
-    )
 
     # Set user custom fields if needed
     if data[:dingtalk_mobile].present?
@@ -168,13 +159,6 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     )
 
     if authenticator
-      extra_data = JSON.parse(authenticator.extra) rescue {}
-      union_id = extra_data["dingtalk_union_id"]
-
-      if union_id.present?
-        ::PluginStore.remove("dingtalk_sso", "dingtalk_union_id_#{union_id}")
-      end
-
       # Remove custom fields
       user.custom_fields.delete("dingtalk_mobile")
       user.save_custom_fields
@@ -195,10 +179,14 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     return "" unless info
 
-    extra_data = JSON.parse(info.extra) rescue {}
-    union_id = extra_data["dingtalk_union_id"]
-
-    I18n.t("login.dingtalk.description", union_id: union_id)
+    begin
+      extra_data = JSON.parse(info.extra)
+      union_id = extra_data["dingtalk_union_id"]
+      I18n.t("login.dingtalk.description", union_id: union_id)
+    rescue JSON::ParserError => e
+      Rails.logger.warn "DingTalk: Failed to parse extra data for user #{user.id}: #{e.message}"
+      ""
+    end
   end
 
   private
@@ -289,7 +277,6 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
       .unicode_normalize(:nfkd)
       .gsub(/[^\w\-]/, "_")
       .gsub(/_{2,}/, "_")
-      .gsub(/^_+|_+$/, "")
       .downcase
 
     # Ensure username meets Discourse requirements
