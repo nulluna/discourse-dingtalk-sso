@@ -33,7 +33,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def primary_email_verified?(auth_token)
     # Only real DingTalk emails (not virtual ones) are considered verified
     email = auth_token.dig(:info, :email)
-    return false unless email.present?
+    return false if email.blank?
 
     # Check if it's not a virtual email domain
     !email.end_with?("@#{SiteSetting.dingtalk_mobile_email_domain}") &&
@@ -82,17 +82,25 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     uid = auth_token[:uid]
 
     # === 用户名生成逻辑 ===
-    # 优先使用钉钉昵称，失败则使用模板生成
+    # 优先使用明确的nickname字段（如果存在）
+    # 如果nickname不存在，使用模板生成（模板中可使用name等变量）
     nickname = extract_dingtalk_nickname(data, extra)
-    result.username = sanitize_username(nickname)
+    nickname_field = data[:nickname] # 明确的nickname字段
+
+    if nickname_field.present?
+      # 如果有明确的nickname字段，优先使用
+      result.username = sanitize_username(nickname_field)
+    end
 
     if result.username.blank?
+      # nickname不存在或无效，使用模板生成
       result.username = generate_username_from_template(uid, data)
       Rails.logger.warn "DingTalk: Generated username from template: #{result.username}"
     end
 
     # === 姓名直接使用钉钉数据 ===
-    result.name = nickname.presence || result.username
+    # 优先使用 name 字段（通常是中文显示名），fallback 到 nickname 或 username
+    result.name = data[:name].presence || extra["nick"].presence || nickname.presence || result.username
 
     # === 邮箱生成逻辑（渐进式降级） ===
     email_info = generate_email_with_fallback(data, extra, uid)
@@ -100,7 +108,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     result.email_valid = email_info[:valid]
 
     # 不再强制要求邮箱，允许虚拟邮箱
-    unless result.email.present?
+    if result.email.blank?
       Rails.logger.error "DingTalk: Failed to generate email for user #{result.username}"
       result.failed = true
       result.failed_reason = I18n.t("login.dingtalk.error")

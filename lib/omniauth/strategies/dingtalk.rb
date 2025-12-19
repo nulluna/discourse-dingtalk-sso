@@ -22,7 +22,7 @@ module OmniAuth
       # DingTalk requires POST with JSON body: clientId, clientSecret, code, grantType
       def build_access_token
         verifier = request.params["code"]
-        return nil unless verifier.present?
+        return nil if verifier.blank?
 
         response = nil
         params = {
@@ -109,7 +109,7 @@ module OmniAuth
 
       def raw_info
         @raw_info ||= begin
-          return {} unless access_token&.token.present?
+          return {} if access_token&.token.blank?
 
           response = access_token.get(
             "/v1.0/contact/users/me",
