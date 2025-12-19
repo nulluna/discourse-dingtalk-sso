@@ -165,21 +165,25 @@ describe OmniAuth::Strategies::Dingtalk do
       end
 
       it "returns empty hash and logs error" do
-        expect(strategy).to receive(:log_error).with(/DingTalk API error/)
+        allow(strategy).to receive(:log_error)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
+        expect(strategy).to have_received(:log_error).with(/DingTalk API error/)
       end
     end
 
     context "with OAuth error" do
       before do
-        allow(access_token).to receive(:get).and_raise(OAuth2::Error.new(response))
+        mock_response = double("response").as_null_object
+        oauth_error = OAuth2::Error.new(mock_response)
+        allow(access_token).to receive(:get).and_raise(oauth_error)
       end
 
       it "returns empty hash and logs error" do
-        expect(strategy).to receive(:log_error).with(/user info OAuth error/)
+        allow(strategy).to receive(:log_error)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
+        expect(strategy).to have_received(:log_error).with(/user info OAuth error/)
       end
     end
 
@@ -190,9 +194,10 @@ describe OmniAuth::Strategies::Dingtalk do
       end
 
       it "returns empty hash and logs error" do
-        expect(strategy).to receive(:log_error).with(/user info parse error/)
+        allow(strategy).to receive(:log_error)
         info = strategy.send(:raw_info)
         expect(info).to eq({})
+        expect(strategy).to have_received(:log_error).with(/user info parse error/)
       end
     end
 
