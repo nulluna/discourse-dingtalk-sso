@@ -33,11 +33,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def primary_email_verified?(auth_token)
     # Only real DingTalk emails (not virtual ones) are considered verified
     email = auth_token.dig(:info, :email)
-    return false if email.blank?
-
-    # Check if it's not a virtual email domain
-    !email.end_with?("@#{SiteSetting.dingtalk_mobile_email_domain}") &&
-    !email.end_with?("@#{SiteSetting.dingtalk_virtual_email_domain}")
+    !virtual_email?(email)
   end
 
   def register_middleware(omniauth)
@@ -150,6 +146,13 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def after_create_account(user, auth)
     data = auth[:extra_data]
 
+    # 检测虚拟邮箱并自动激活用户
+    if virtual_email?(user.email)
+      user.active = true
+      user.save!
+      Rails.logger.info "DingTalk: Auto-activated virtual email user #{user.username}"
+    end
+
     # Set user custom fields if needed
     if data[:dingtalk_mobile].present?
       user.custom_fields["dingtalk_mobile"] = data[:dingtalk_mobile]
@@ -199,6 +202,14 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
   private
 
+  # 检测是否为虚拟邮箱
+  def virtual_email?(email)
+    return false if email.blank?
+
+    email.end_with?("@#{SiteSetting.dingtalk_virtual_email_domain}") ||
+      email.end_with?("@#{SiteSetting.dingtalk_mobile_email_domain}")
+  end
+
   # 从钉钉数据中提取昵称/姓名
   def extract_dingtalk_nickname(data, extra)
     data[:nickname] || data[:name] || extra["nick"] || ""
@@ -246,9 +257,8 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     # 计算 UnionID 的 MD5 hash
     hash_full = Digest::MD5.hexdigest(uid)
 
-    # 获取并清洗姓名
+    # 获取姓名（保留原始值用于模板替换）
     name = data[:name] || data[:nickname] || ""
-    sanitized_name = sanitize_username(name)
 
     # 替换模板变量
     uid_truncated = safe_truncate_uid(uid, 16)
@@ -256,7 +266,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
       .gsub("{hash6}", hash_full[0..5])
       .gsub("{hash8}", hash_full[0..7])
       .gsub("{unionid}", uid_truncated)
-      .gsub("{name}", sanitized_name.presence || "user")
+      .gsub("{name}", name.presence || "user")
 
     username = username.downcase
 
