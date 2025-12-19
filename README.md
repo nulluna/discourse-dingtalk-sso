@@ -196,6 +196,25 @@ end
 | `dingtalk_allow_virtual_email` | `true` | 是否允许虚拟邮箱 |
 | `dingtalk_virtual_email_domain` | `virtual.local` | 虚拟邮箱域名 |
 
+### 虚拟邮箱用户自动激活 / Auto-Activation for Virtual Email Users
+
+**重要特性:** 使用虚拟邮箱的用户会自动激活，无需邮件验证。
+
+- ✅ **自动激活:** 虚拟邮箱用户创建后立即设置为激活状态
+- ✅ **跳过邮件:** 不发送激活邮件（虚拟邮箱无法接收邮件）
+- ✅ **直接登录:** SSO 认证后可直接登录系统
+- ✅ **真实邮箱不受影响:** 真实邮箱用户仍按原有流程激活
+
+**实现逻辑:**
+
+当用户邮箱以虚拟邮箱域名结尾时（`@virtual.local` 或 `@dingtalk.mobile`），系统会在用户创建后自动将其标记为已激活状态。
+
+```ruby
+# 虚拟邮箱域名: dingtalk_abc123@virtual.local
+# 手机虚拟邮箱: 13800138000@dingtalk.mobile
+# → 自动激活，无需邮件验证
+```
+
 ### 用户名生成模板 / Username Template
 
 当钉钉昵称无法转换为有效用户名时，使用模板生成：

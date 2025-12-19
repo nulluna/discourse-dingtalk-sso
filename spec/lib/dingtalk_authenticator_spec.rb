@@ -287,6 +287,26 @@ describe DingtalkAuthenticator do
         end
       end
 
+      context "with Chinese name in template" do
+        before do
+          SiteSetting.dingtalk_username_template = "dt_{name}"
+          auth_hash[:info][:name] = "张三"
+          auth_hash[:info][:nickname] = nil
+        end
+
+        it "preserves Chinese name in result.name field" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.name).to eq("张三")
+        end
+
+        it "generates valid username after sanitization" do
+          result = authenticator.after_authenticate(auth_hash)
+          # Chinese characters will be sanitized, triggering fallback
+          expect(result.username).to be_present
+          expect(result.username).to match(/^[a-z0-9_\-]+$/)
+        end
+      end
+
       context "with {hash8} template" do
         before { SiteSetting.dingtalk_username_template = "dt_{hash8}" }
 
@@ -384,6 +404,53 @@ describe DingtalkAuthenticator do
       user.reload
 
       expect(user.custom_fields["dingtalk_mobile"]).to eq("13800138000")
+    end
+
+    context "with virtual email users" do
+      it "auto-activates user with virtual email domain" do
+        SiteSetting.dingtalk_allow_virtual_email = true
+        SiteSetting.dingtalk_virtual_email_domain = "virtual.local"
+
+        virtual_user = Fabricate(:user, email: "dingtalk_abc123@virtual.local", active: false)
+        virtual_auth = {
+          extra_data: {
+            dingtalk_union_id: "union_virtual123"
+          }
+        }
+
+        authenticator.after_create_account(virtual_user, virtual_auth)
+
+        expect(virtual_user.active).to be true
+      end
+
+      it "auto-activates user with mobile email domain" do
+        SiteSetting.dingtalk_mobile_email_domain = "dingtalk.mobile"
+
+        mobile_user = Fabricate(:user, email: "13800138000@dingtalk.mobile", active: false)
+        mobile_auth = {
+          extra_data: {
+            dingtalk_union_id: "union_mobile123",
+            dingtalk_mobile: "13800138000"
+          }
+        }
+
+        authenticator.after_create_account(mobile_user, mobile_auth)
+
+        expect(mobile_user.active).to be true
+      end
+
+      it "does not activate user with real email" do
+        real_user = Fabricate(:user, email: "real@example.com", active: false)
+        real_auth = {
+          extra_data: {
+            dingtalk_union_id: "union_real123"
+          }
+        }
+
+        authenticator.after_create_account(real_user, real_auth)
+
+        expect(real_user.active).to be false
+      end
     end
   end
 
