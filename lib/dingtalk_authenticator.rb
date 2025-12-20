@@ -84,7 +84,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     username = nil
     if nickname_field.present?
-      username = sanitize_username(nickname_field)
+      username = UserNameSuggester.fix_username(nickname_field)
     end
 
     if username.blank?
@@ -353,7 +353,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     username = username.downcase
 
     # 验证生成的用户名，如果无效则使用后备方案
-    sanitized_result = sanitize_username(username)
+    sanitized_result = UserNameSuggester.fix_username(username)
     if sanitized_result.blank?
       # 后备方案：使用 dingtalk_ + hash6
       username = "dingtalk_#{hash_full[0..5]}"
@@ -363,42 +363,5 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     end
 
     username
-  end
-
-  def sanitize_username(username)
-    return "" if username.blank?
-
-    # Convert to string and normalize
-    username = username.to_s.strip
-
-    # For Chinese or special characters, try to transliterate
-    # Remove special characters, keep alphanumeric, underscore, hyphen
-    sanitized = username
-      .unicode_normalize(:nfkd)
-      .gsub(/[^\w\-]/, "_")
-      .gsub(/_{2,}/, "_")
-      .downcase
-
-    # Ensure username meets Discourse requirements
-    # - Length between 3-20 characters
-    # - Starts with alphanumeric
-    # - Only contains alphanumeric, underscore, hyphen
-
-    # Remove leading/trailing underscores/hyphens
-    sanitized = sanitized.gsub(/^[\-_]+|[\-_]+$/, "")
-
-    # Ensure it starts with alphanumeric
-    unless sanitized =~ /^[a-z0-9]/
-      sanitized = "u_#{sanitized}"
-    end
-
-    # Truncate if too long (max 20 chars for Discourse)
-    sanitized = sanitized[0..19] if sanitized.length > 20
-
-    # Ensure minimum length (min 3 chars) using ljust
-    sanitized = sanitized.ljust(3, "_") if sanitized.length < 3
-
-    # Return empty if still invalid after all processing
-    sanitized =~ /^[a-z0-9][a-z0-9_\-]{1,18}[a-z0-9]$/i ? sanitized : ""
   end
 end
