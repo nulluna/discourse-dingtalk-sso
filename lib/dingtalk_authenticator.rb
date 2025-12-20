@@ -345,7 +345,8 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
       .gsub("{hash6}", hash_full[0..5])
       .gsub("{hash8}", hash_full[0..7])
       .gsub("{unionid}", uid_truncated)
-      .gsub("{name}", name.presence || "user")
+      .gsub("{name}", name.presence || "user")  # {name} 经过清洗，有后备值
+      .gsub("{姓名}", data[:name].presence || "dingtalk_#{hash_full[0..5]}")  # {姓名} 直接取钉钉原值，简单粗暴，后备值为 dingtalk_hash6
 
     username = username.downcase
 

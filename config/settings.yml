@@ -69,5 +69,5 @@ login:
 
   dingtalk_username_template:
     default: "dingtalk_{hash6}"
-    regex: "^[a-z0-9_\\-{\\}]+$"
-    description: "用户名生成模板。支持变量：{name}=姓名, {hash6}=UnionID的6位hash, {hash8}=8位hash, {unionid}=UnionID前16位。Discourse会自动处理重名（追加数字） / Username generation template. Variables: {name}=name, {hash6}=6-char hash, {hash8}=8-char hash, {unionid}=first 16 chars of UnionID. Discourse auto-handles duplicates"
+    regex: "^[a-z0-9_\\-{\\}\u4e00-\u9fff]+$"
+    description: "用户名生成模板。支持变量：{name}=姓名（经过清洗）, {姓名}=钉钉真实姓名, {hash6}=UnionID的6位hash, {hash8}=8位hash, {unionid}=UnionID前16位。Discourse会自动处理重名（追加数字） / Username generation template. Variables: {name}=name (sanitized), {姓名}=DingTalk real name, {hash6}=6-char hash, {hash8}=8-char hash, {unionid}=first 16 chars of UnionID. Discourse auto-handles duplicates"

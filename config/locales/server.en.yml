@@ -14,7 +14,7 @@ en:
     dingtalk_allow_virtual_email: "Allow virtual email for registration"
     dingtalk_virtual_email_domain: "Virtual email domain suffix"
     dingtalk_mobile_email_domain: "Mobile number virtual email domain suffix"
-    dingtalk_username_template: "Username generation template (supports: {name}, {hash6}, {hash8}, {unionid})"
+    dingtalk_username_template: "Username generation template (supports: {name}=name (sanitized), {姓名}=DingTalk real name, {hash6}, {hash8}, {unionid})"
 
   login:
     dingtalk:
