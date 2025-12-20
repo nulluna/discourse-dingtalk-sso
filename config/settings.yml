@@ -38,7 +38,7 @@ login:
     description: "登录按钮显示文本 / Login button text"
 
   dingtalk_authorize_signup:
-    default: false
+    default: true
     client: true
     description: "允许钉钉用户自动注册（独立于全局'Allow new registrations'设置,启用后钉钉用户可直接登录无需经过注册页面）/ Allow automatic signup via DingTalk (independent of global 'Allow new registrations' setting, users are logged in directly without signup page)"
 

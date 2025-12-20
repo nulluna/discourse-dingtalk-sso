@@ -31,9 +31,11 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   def primary_email_verified?(auth_token)
-    # Only real DingTalk emails (not virtual ones) are considered verified
+    # All DingTalk SSO emails are considered verified (including virtual emails)
+    # DingTalk SSO has already authenticated the user's identity, so we trust the email
+    # This allows users to login directly without email verification
     email = auth_token.dig(:info, :email)
-    !virtual_email?(email)
+    email.present?
   end
 
   def register_middleware(omniauth)
@@ -90,7 +92,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     if result.username.blank?
       # nickname不存在或无效，使用模板生成
-      result.username = generate_username_from_template(uid, data)
+      result.username = generate_username_from_template(uid, data, extra)
       Rails.logger.warn "DingTalk: Generated username from template: #{result.username}"
     end
 
@@ -251,14 +253,14 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   # 根据模板生成用户名
-  def generate_username_from_template(uid, data = {})
+  def generate_username_from_template(uid, data = {}, extra = {})
     template = SiteSetting.dingtalk_username_template
 
     # 计算 UnionID 的 MD5 hash
     hash_full = Digest::MD5.hexdigest(uid)
 
-    # 获取姓名（保留原始值用于模板替换）
-    name = data[:name] || data[:nickname] || ""
+    # 获取姓名（保留原始值用于模板替换，优先级：data[:name] > data[:nickname] > extra["nick"]）
+    name = data[:name] || data[:nickname] || extra["nick"] || ""
 
     # 替换模板变量
     uid_truncated = safe_truncate_uid(uid, 16)
