@@ -2,5 +2,6 @@ en:
   js:
     login:
       dingtalk:
+        name: "DingTalk"
         title: "Login with DingTalk"
         message: "Authenticating via DingTalk..."

@@ -2,5 +2,6 @@ zh_CN:
   js:
     login:
       dingtalk:
+        name: "钉钉"
         title: "使用钉钉登录"
         message: "正在通过钉钉进行身份验证..."

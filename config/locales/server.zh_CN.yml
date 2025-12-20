@@ -18,6 +18,7 @@ zh_CN:
 
   login:
     dingtalk:
+      name: "钉钉"
       title: "使用钉钉登录"
       description: "钉钉账号 (Union ID: %{union_id})"
       error: "钉钉登录失败,请稍后重试"

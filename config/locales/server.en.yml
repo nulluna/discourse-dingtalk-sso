@@ -18,6 +18,7 @@ en:
 
   login:
     dingtalk:
+      name: "DingTalk"
       title: "Login with DingTalk"
       description: "DingTalk account (Union ID: %{union_id})"
       error: "DingTalk login failed, please try again later"
