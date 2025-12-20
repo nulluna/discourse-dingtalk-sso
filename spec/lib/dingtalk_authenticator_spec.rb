@@ -189,7 +189,7 @@ describe DingtalkAuthenticator do
       end
     end
 
-    context "virtual email generation" do
+    context "when generating virtual email" do
       before do
         SiteSetting.dingtalk_allow_virtual_email = true
         SiteSetting.dingtalk_virtual_email_domain = "test.local"
@@ -213,7 +213,7 @@ describe DingtalkAuthenticator do
         it "generates mobile-based virtual email" do
           result = authenticator.after_authenticate(auth_hash)
           expect(result.email).to eq("13800138000@dingtalk.mobile")
-          expect(result.email_valid).to be false
+          expect(result.email_valid).to be true # SSO 已验证身份，信任所有邮箱
           expect(result.failed).to be_falsey
         end
       end
@@ -230,7 +230,7 @@ describe DingtalkAuthenticator do
           result = authenticator.after_authenticate(auth_hash)
           # uid is truncated to 16 chars: "union_abc123def4"
           expect(result.email).to match(/^dingtalk_union_abc123def4@test\.local$/)
-          expect(result.email_valid).to be false
+          expect(result.email_valid).to be true # SSO 已验证身份，信任所有邮箱
           expect(result.failed).to be_falsey
         end
 
@@ -253,7 +253,7 @@ describe DingtalkAuthenticator do
       end
     end
 
-    context "username generation from template" do
+    context "when generating username from template" do
       before do
         SiteSetting.dingtalk_allow_virtual_email = true
         auth_hash[:info][:nickname] = nil
@@ -373,6 +373,122 @@ describe DingtalkAuthenticator do
         expect(Rails.logger).to have_received(:info).with(/DingTalk auth result/).at_least(:once)
       end
     end
+
+    # 🔥 新增：SSO 自动登录测试（关键修复验证）
+    context "when auto-creating new user for SSO login" do
+      before do
+        SiteSetting.dingtalk_authorize_signup = true
+        # 确保没有同名用户（使用 Discourse 的 find_by_email）
+        existing_user = User.find_by_email(auth_hash[:info][:email])
+        existing_user.destroy! if existing_user
+        UserAssociatedAccount.where(provider_name: "dingtalk", provider_uid: auth_hash[:uid]).destroy_all
+      end
+
+      it "creates new user automatically when user does not exist" do
+        expect {
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.user).to be_present
+          expect(result.user.persisted?).to be true
+        }.to change { User.count }.by(1)
+      end
+
+      it "sets result.user to prevent redirect to signup page" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        expect(result.user).to be_present
+        expect(result.user).to be_a(User)
+        expect(result.failed).to be_falsey
+      end
+
+      it "activates user immediately" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        expect(result.user.active).to be true
+        expect(result.user.approved?).to be true
+      end
+
+      it "creates confirmed EmailToken for the user" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        email_token = result.user.email_tokens.find_by(email: result.user.email)
+        expect(email_token).to be_present
+        expect(email_token.confirmed).to be true
+      end
+
+      it "creates UserAssociatedAccount with correct provider_uid" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        association = UserAssociatedAccount.find_by(
+          provider_name: "dingtalk",
+          provider_uid: auth_hash[:uid],
+          user_id: result.user.id
+        )
+        expect(association).to be_present
+        expect(association.last_used).to be_present
+      end
+
+      it "sets user email from auth_hash" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        expect(result.user.email).to eq("zhangsan@example.com")
+      end
+
+      it "sets user name from auth_hash" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        expect(result.user.name).to eq("张三")
+      end
+
+      it "generates valid username" do
+        result = authenticator.after_authenticate(auth_hash)
+
+        expect(result.user.username).to be_present
+        expect(result.user.username).to match(/^[a-z0-9_\-]+$/)
+      end
+
+      context "with virtual email user" do
+        before do
+          SiteSetting.dingtalk_allow_virtual_email = true
+          auth_hash[:info][:email] = nil
+          auth_hash[:info][:phone] = "13800138000"
+        end
+
+        it "creates user with virtual email and activates" do
+          result = authenticator.after_authenticate(auth_hash)
+
+          expect(result.user).to be_present
+          expect(result.user.email).to eq("13800138000@dingtalk.mobile")
+          expect(result.user.active).to be true
+        end
+      end
+
+      context "when dingtalk_authorize_signup is false" do
+        before { SiteSetting.dingtalk_authorize_signup = false }
+
+        it "does not create user automatically" do
+          expect {
+            result = authenticator.after_authenticate(auth_hash)
+            expect(result.user).to be_nil
+          }.not_to change { User.count }
+        end
+      end
+
+      context "when user already exists (by email)" do
+        let!(:existing_user) { Fabricate(:user, email: "zhangsan@example.com") }
+
+        it "finds existing user instead of creating new one" do
+          expect {
+            result = authenticator.after_authenticate(auth_hash)
+            expect(result.user).to eq(existing_user)
+          }.not_to change { User.count }
+        end
+
+        it "does not fail authentication" do
+          result = authenticator.after_authenticate(auth_hash)
+          expect(result.failed).to be_falsey
+        end
+      end
+    end
   end
 
   describe "#after_create_account" do
@@ -406,52 +522,8 @@ describe DingtalkAuthenticator do
       expect(user.custom_fields["dingtalk_mobile"]).to eq("13800138000")
     end
 
-    context "with virtual email users" do
-      it "auto-activates user with virtual email domain" do
-        SiteSetting.dingtalk_allow_virtual_email = true
-        SiteSetting.dingtalk_virtual_email_domain = "virtual.local"
-
-        virtual_user = Fabricate(:user, email: "dingtalk_abc123@virtual.local", active: false)
-        virtual_auth = {
-          extra_data: {
-            dingtalk_union_id: "union_virtual123"
-          }
-        }
-
-        authenticator.after_create_account(virtual_user, virtual_auth)
-
-        expect(virtual_user.active).to be true
-      end
-
-      it "auto-activates user with mobile email domain" do
-        SiteSetting.dingtalk_mobile_email_domain = "dingtalk.mobile"
-
-        mobile_user = Fabricate(:user, email: "13800138000@dingtalk.mobile", active: false)
-        mobile_auth = {
-          extra_data: {
-            dingtalk_union_id: "union_mobile123",
-            dingtalk_mobile: "13800138000"
-          }
-        }
-
-        authenticator.after_create_account(mobile_user, mobile_auth)
-
-        expect(mobile_user.active).to be true
-      end
-
-      it "does not activate user with real email" do
-        real_user = Fabricate(:user, email: "real@example.com", active: false)
-        real_auth = {
-          extra_data: {
-            dingtalk_union_id: "union_real123"
-          }
-        }
-
-        authenticator.after_create_account(real_user, real_auth)
-
-        expect(real_user.active).to be false
-      end
-    end
+    # Note: Virtual email user activation is now handled in after_authenticate
+    # when auto-creating users, not in after_create_account
   end
 
   describe "#revoke" do

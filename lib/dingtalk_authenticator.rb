@@ -64,10 +64,9 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   def after_authenticate(auth_token, existing_account: nil)
-    result = Auth::Result.new
-
     # Validate auth_token structure
     unless auth_token.is_a?(Hash) && auth_token[:uid].present?
+      result = Auth::Result.new
       Rails.logger.error "DingTalk: Invalid auth_token structure"
       result.failed = true
       result.failed_reason = I18n.t("login.dingtalk.error")
@@ -79,52 +78,138 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     extra = auth_token.dig(:extra, :raw_info) || {}
     uid = auth_token[:uid]
 
-    # === 用户名生成逻辑 ===
-    # 优先使用明确的nickname字段（如果存在）
-    # 如果nickname不存在，使用模板生成（模板中可使用name等变量）
+    # === 准备用户信息 ===
     nickname = extract_dingtalk_nickname(data, extra)
-    nickname_field = data[:nickname] # 明确的nickname字段
+    nickname_field = data[:nickname]
 
+    username = nil
     if nickname_field.present?
-      # 如果有明确的nickname字段，优先使用
-      result.username = sanitize_username(nickname_field)
+      username = sanitize_username(nickname_field)
     end
 
-    if result.username.blank?
-      # nickname不存在或无效，使用模板生成
-      result.username = generate_username_from_template(uid, data, extra)
-      Rails.logger.warn "DingTalk: Generated username from template: #{result.username}"
+    if username.blank?
+      username = generate_username_from_template(uid, data, extra)
+      Rails.logger.warn "DingTalk: Generated username from template: #{username}"
     end
 
-    # === 姓名直接使用钉钉数据 ===
-    # 优先使用 name 字段（通常是中文显示名），fallback 到 nickname 或 username
-    result.name = data[:name].presence || extra["nick"].presence || nickname.presence || result.username
+    # 姓名（用于显示）
+    name = data[:name].presence || extra["nick"].presence || nickname.presence || username
 
-    # === 邮箱生成逻辑（渐进式降级） ===
+    # 邮箱生成（渐进式降级）
     email_info = generate_email_with_fallback(data, extra, uid)
-    result.email = email_info[:email]
-    result.email_valid = email_info[:valid]
+    email = email_info[:email]
+    email_valid = email_info[:valid]
 
-    # 不再强制要求邮箱，允许虚拟邮箱
-    if result.email.blank?
-      Rails.logger.error "DingTalk: Failed to generate email for user #{result.username}"
+    if email.blank?
+      result = Auth::Result.new
+      Rails.logger.error "DingTalk: Failed to generate email for user #{username}"
       result.failed = true
       result.failed_reason = I18n.t("login.dingtalk.error")
       return result
     end
 
     # 记录虚拟邮箱使用情况
-    unless email_info[:valid]
-      Rails.logger.info "DingTalk: Virtual email assigned for #{result.username}: #{result.email}"
+    unless email_valid
+      Rails.logger.info "DingTalk: Virtual email assigned for #{username}: #{email}"
     end
+
+    # 覆盖 auth_token 中的 info，确保父类 ManagedAuthenticator 使用正确的数据
+    auth_token[:info] = {
+      nickname: username,
+      name: name,
+      email: email,
+      phone: data[:phone]
+    }
+
+    # 调用父类方法，利用 ManagedAuthenticator 的用户匹配逻辑
+    result = super(auth_token, existing_account: existing_account)
+
+    # 强制设置 email_valid（SSO 已验证身份，信任所有邮箱）
+    result.email_valid = true if result.email.present?
 
     # Store DingTalk-specific data
     result.extra_data = {
-      dingtalk_union_id: auth_token[:uid],
+      dingtalk_union_id: uid,
       dingtalk_open_id: extra["openId"],
       dingtalk_corp_id: auth_token.dig(:extra, :corp_id),
       dingtalk_mobile: data[:phone]
     }
+
+    # 🔥 关键修复：如果启用自动注册且用户不存在，立即创建用户
+    if result.user.nil? && SiteSetting.dingtalk_authorize_signup
+      Rails.logger.info "DingTalk: Creating new user automatically - #{username}"
+
+      # 创建新用户
+      begin
+        user = User.new(
+          email: result.email,
+          username: UserNameSuggester.suggest(username),
+          name: name,
+          active: true, # 直接激活
+          approved: !SiteSetting.must_approve_users?, # 根据站点设置决定是否需要审批
+          approved_at: SiteSetting.must_approve_users? ? nil : Time.zone.now,
+          approved_by_id: SiteSetting.must_approve_users? ? nil : Discourse.system_user.id
+        )
+
+        # 生成随机密码（OAuth 用户不需要密码）
+        user.password = SecureRandom.hex
+
+        # 保存用户
+        user.save!
+
+        # 创建 EmailToken（标记邮箱已验证）
+        user.email_tokens.create!(
+          email: user.email,
+          confirmed: true,
+          scope: EmailToken.scopes[:signup]
+        )
+
+        # 激活用户
+        user.activate
+
+        Rails.logger.info "DingTalk: User created successfully - #{user.username} (ID: #{user.id})"
+
+        # 设置 result.user，这样就不会跳转到注册页面
+        result.user = user
+
+        # 更新 UserAssociatedAccount 关联（父类 super 已经创建了，这里只需要关联到新用户）
+        association = UserAssociatedAccount.find_by(
+          provider_name: "dingtalk",
+          provider_uid: uid
+        )
+        if association
+          association.user = user
+          association.save!
+        else
+          Rails.logger.warn "DingTalk: UserAssociatedAccount not found, creating new one"
+          UserAssociatedAccount.create!(
+            provider_name: "dingtalk",
+            provider_uid: uid,
+            user: user,
+            info: data,
+            credentials: auth_token[:credentials] || {},
+            extra: extra,
+            last_used: Time.zone.now
+          )
+        end
+
+        # 调用 after_create_account 来设置自定义字段
+        after_create_account(user, result)
+
+      rescue ActiveRecord::RecordInvalid => e
+        Rails.logger.error "DingTalk: Failed to create user - #{e.message}"
+        Rails.logger.error e.backtrace.join("\n")
+        result.failed = true
+        result.failed_reason = e.record.errors.full_messages.join(", ")
+        return result
+      rescue StandardError => e
+        Rails.logger.error "DingTalk: Unexpected error creating user - #{e.class}: #{e.message}"
+        Rails.logger.error e.backtrace.join("\n")
+        result.failed = true
+        result.failed_reason = I18n.t("login.dingtalk.error")
+        return result
+      end
+    end
 
     # Handle email conflicts
     if SiteSetting.dingtalk_overrides_email && result.email.present?
@@ -133,8 +218,7 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     # Log authentication for debugging
     if SiteSetting.dingtalk_debug_auth
-      Rails.logger.info "DingTalk auth result: username=#{result.username}, email=#{result.email}, email_valid=#{result.email_valid}, uid=#{auth_token[:uid]}"
-      Rails.logger.info "DingTalk auth: will use email matching for existing users" if result.email_valid
+      Rails.logger.info "DingTalk auth result: user_id=#{result.user&.id}, username=#{result.username}, email=#{result.email}, email_valid=#{result.email_valid}"
     end
 
     result
@@ -148,20 +232,13 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   def after_create_account(user, auth)
     data = auth[:extra_data]
 
-    # 检测虚拟邮箱并自动激活用户
-    if virtual_email?(user.email)
-      user.active = true
-      user.save!
-      Rails.logger.info "DingTalk: Auto-activated virtual email user #{user.username}"
-    end
-
     # Set user custom fields if needed
     if data[:dingtalk_mobile].present?
       user.custom_fields["dingtalk_mobile"] = data[:dingtalk_mobile]
       user.save_custom_fields
     end
 
-    Rails.logger.info "DingTalk user created: #{user.username} (Union ID: #{data[:dingtalk_union_id]})"
+    Rails.logger.info "DingTalk: after_create_account completed for #{user.username} (Union ID: #{data[:dingtalk_union_id]})"
   end
 
   def revoke(user, skip_remote: false)
