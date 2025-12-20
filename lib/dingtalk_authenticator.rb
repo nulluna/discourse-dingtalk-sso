@@ -341,12 +341,14 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     # 替换模板变量
     uid_truncated = safe_truncate_uid(uid, 16)
+    # {姓名} 取值逻辑：与"全名"保持一致（data[:name] > extra["nick"] > data[:nickname]）
+    real_name = data[:name].presence || extra["nick"].presence || data[:nickname].presence || "dingtalk_#{hash_full[0..5]}"
     username = template
       .gsub("{hash6}", hash_full[0..5])
       .gsub("{hash8}", hash_full[0..7])
       .gsub("{unionid}", uid_truncated)
       .gsub("{name}", name.presence || "user")  # {name} 经过清洗，有后备值
-      .gsub("{姓名}", data[:name].presence || "dingtalk_#{hash_full[0..5]}")  # {姓名} 直接取钉钉原值，简单粗暴，后备值为 dingtalk_hash6
+      .gsub("{姓名}", real_name)  # {姓名} 与"全名"使用相同取值逻辑
 
     username = username.downcase
 
