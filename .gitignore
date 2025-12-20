@@ -1,3 +1,8 @@
 node_modules
 /gems
 /auto_generated
+
+# Claude Code 开发文档和临时文件
+.claude/plan/
+.spec-workflow/
+test_sso_direct_login.rb
