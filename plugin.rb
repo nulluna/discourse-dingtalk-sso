@@ -26,5 +26,8 @@ auth_provider(
 )
 
 after_initialize do
+  # Load plugin models
+  require_relative "models/dingtalk_user_organization"
+
   # Plugin initialization logic
 end

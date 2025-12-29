@@ -15,14 +15,21 @@ zh_CN:
     dingtalk_virtual_email_domain: "虚拟邮箱域名后缀"
     dingtalk_mobile_email_domain: "手机号虚拟邮箱域名后缀"
     dingtalk_username_template: "用户名生成模板（支持变量：{name}=姓名（经过清洗）, {姓名}=钉钉真实姓名, {hash6}, {hash8}, {unionid}）"
+    dingtalk_auto_fill_user_name: "关联钉钉时自动填充用户全名"
+    dingtalk_track_organizations: "记录用户的企业关联关系（多组织支持）"
+    dingtalk_allowed_corp_ids: "允许登录的企业ID白名单（留空=允许所有）"
+    dingtalk_blocked_corp_ids: "禁止登录的企业ID黑名单"
 
   login:
     dingtalk:
       name: "钉钉"
       title: "使用钉钉登录"
       description: "钉钉账号 (Union ID: %{union_id})"
+      connected: "已连接钉钉账号"
       error: "钉钉登录失败,请稍后重试"
+      timeout_error: "钉钉登录请求超时，请检查网络连接后重试"
       missing_email: "您的钉钉账号未配置邮箱，系统已为您分配虚拟邮箱"
       virtual_email_notice: "您使用的是虚拟邮箱，无法接收邮件通知，请依赖钉钉通知"
       missing_client_id: "钉钉Client ID未配置,请联系管理员"
       missing_client_secret: "钉钉Client Secret未配置,请联系管理员"
+      organization_not_allowed: "您的企业无权访问此系统，请联系管理员"

@@ -15,14 +15,21 @@ en:
     dingtalk_virtual_email_domain: "Virtual email domain suffix"
     dingtalk_mobile_email_domain: "Mobile number virtual email domain suffix"
     dingtalk_username_template: "Username generation template (supports: {name}=name (sanitized), {姓名}=DingTalk real name, {hash6}, {hash8}, {unionid})"
+    dingtalk_auto_fill_user_name: "Auto-fill user name from DingTalk when associating"
+    dingtalk_track_organizations: "Track user-organization associations (multi-organization support)"
+    dingtalk_allowed_corp_ids: "Allowed corp IDs whitelist (empty = allow all)"
+    dingtalk_blocked_corp_ids: "Blocked corp IDs blacklist"
 
   login:
     dingtalk:
       name: "DingTalk"
       title: "Login with DingTalk"
       description: "DingTalk account (Union ID: %{union_id})"
+      connected: "Connected to DingTalk"
       error: "DingTalk login failed, please try again later"
+      timeout_error: "DingTalk login request timed out. Please check your network connection and try again"
       missing_email: "Virtual email assigned as your DingTalk account has no email configured"
       virtual_email_notice: "You're using a virtual email and won't receive email notifications. Please rely on DingTalk notifications"
       missing_client_id: "DingTalk Client ID is not configured, please contact administrator"
       missing_client_secret: "DingTalk Client Secret is not configured, please contact administrator"
+      organization_not_allowed: "Your organization is not authorized to access this system, please contact administrator"

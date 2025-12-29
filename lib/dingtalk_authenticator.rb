@@ -64,10 +64,12 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
   end
 
   def after_authenticate(auth_token, existing_account: nil)
+    start_time = Time.current  # Track authentication duration for debugging
+
     # Validate auth_token structure
     unless auth_token.is_a?(Hash) && auth_token[:uid].present?
       result = Auth::Result.new
-      Rails.logger.error "DingTalk: Invalid auth_token structure"
+      Rails.logger.error "DingTalk: Invalid auth_token structure - #{auth_token.inspect}"
       result.failed = true
       result.failed_reason = I18n.t("login.dingtalk.error")
       return result
@@ -108,6 +110,18 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
       return result
     end
 
+    # 🆕 企业访问控制检查（可选功能）
+    corp_id = auth_token.dig(:extra, :corp_id)
+    if SiteSetting.dingtalk_track_organizations && corp_id.present?
+      unless is_organization_allowed?(corp_id)
+        result = Auth::Result.new
+        result.failed = true
+        result.failed_reason = I18n.t("login.dingtalk.organization_not_allowed")
+        Rails.logger.warn "DingTalk: Login rejected for corp_id=#{corp_id}"
+        return result
+      end
+    end
+
     # 记录虚拟邮箱使用情况
     unless email_valid
       Rails.logger.info "DingTalk: Virtual email assigned for #{username}: #{email}"
@@ -124,6 +138,15 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     # 调用父类方法，利用 ManagedAuthenticator 的用户匹配逻辑
     result = super(auth_token, existing_account: existing_account)
 
+    # 🔥 需求1：绑定时自动填充用户全名
+    if existing_account && SiteSetting.dingtalk_auto_fill_user_name
+      if existing_account.name.blank? && name.present?
+        existing_account.name = name
+        existing_account.save!
+        Rails.logger.info "DingTalk: Auto-filled user name for #{existing_account.username}: #{name}"
+      end
+    end
+
     # 强制设置 email_valid（SSO 已验证身份，信任所有邮箱）
     result.email_valid = true if result.email.present?
 
@@ -139,63 +162,76 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     if result.user.nil? && SiteSetting.dingtalk_authorize_signup
       Rails.logger.info "DingTalk: Creating new user automatically - #{username}"
 
-      # 创建新用户
+      # 创建新用户（使用事务确保原子性）
       begin
-        user = User.new(
-          email: result.email,
-          username: UserNameSuggester.suggest(username),
-          name: name,
-          active: true, # 直接激活
-          approved: !SiteSetting.must_approve_users?, # 根据站点设置决定是否需要审批
-          approved_at: SiteSetting.must_approve_users? ? nil : Time.zone.now,
-          approved_by_id: SiteSetting.must_approve_users? ? nil : Discourse.system_user.id
-        )
-
-        # 生成随机密码（OAuth 用户不需要密码）
-        user.password = SecureRandom.hex
-
-        # 保存用户
-        user.save!
-
-        # 创建 EmailToken（标记邮箱已验证）
-        user.email_tokens.create!(
-          email: user.email,
-          confirmed: true,
-          scope: EmailToken.scopes[:signup]
-        )
-
-        # 激活用户
-        user.activate
-
-        Rails.logger.info "DingTalk: User created successfully - #{user.username} (ID: #{user.id})"
-
-        # 设置 result.user，这样就不会跳转到注册页面
-        result.user = user
-
-        # 更新 UserAssociatedAccount 关联（父类 super 已经创建了，这里只需要关联到新用户）
-        association = UserAssociatedAccount.find_by(
-          provider_name: "dingtalk",
-          provider_uid: uid
-        )
-        if association
-          association.user = user
-          association.save!
-        else
-          Rails.logger.warn "DingTalk: UserAssociatedAccount not found, creating new one"
-          UserAssociatedAccount.create!(
-            provider_name: "dingtalk",
-            provider_uid: uid,
-            user: user,
-            info: data,
-            credentials: auth_token[:credentials] || {},
-            extra: extra,
-            last_used: Time.zone.now
+        User.transaction do
+          user = User.new(
+            email: result.email,
+            username: UserNameSuggester.suggest(username),
+            name: name,
+            active: true, # 直接激活
+            approved: !SiteSetting.must_approve_users?, # 根据站点设置决定是否需要审批
+            approved_at: SiteSetting.must_approve_users? ? nil : Time.zone.now,
+            approved_by_id: SiteSetting.must_approve_users? ? nil : Discourse.system_user.id
           )
+
+          # 生成随机密码（OAuth 用户不需要密码）
+          user.password = SecureRandom.hex
+
+          # 保存用户
+          user.save!
+
+          # 创建 EmailToken（标记邮箱已验证）
+          user.email_tokens.create!(
+            email: user.email,
+            confirmed: true,
+            scope: EmailToken.scopes[:signup]
+          )
+
+          # 激活用户
+          user.activate
+
+          Rails.logger.info "DingTalk: User created successfully - #{user.username} (ID: #{user.id})"
+
+          # 设置 result.user，这样就不会跳转到注册页面
+          result.user = user
+
+          # 更新 UserAssociatedAccount 关联（父类 super 已经创建了，这里只需要关联到新用户）
+          association = UserAssociatedAccount.find_by(
+            provider_name: "dingtalk",
+            provider_uid: uid
+          )
+          if association
+            association.user = user
+            association.save!
+          else
+            Rails.logger.warn "DingTalk: UserAssociatedAccount not found, creating new one"
+            UserAssociatedAccount.create!(
+              provider_name: "dingtalk",
+              provider_uid: uid,
+              user: user,
+              info: data,
+              credentials: auth_token[:credentials] || {},
+              extra: extra,
+              last_used: Time.zone.now
+            )
+          end
+
+          # 调用 after_create_account 来设置自定义字段
+          after_create_account(user, result)
         end
 
-        # 调用 after_create_account 来设置自定义字段
-        after_create_account(user, result)
-
+      rescue ActiveRecord::RecordNotUnique => e
+        # Handle race condition: user was created by concurrent request
+        Rails.logger.warn "DingTalk: User already exists (race condition), attempting to find - #{e.message}"
+        existing_user = User.find_by(email: result.email) || User.find_by(username: username)
+        if existing_user
+          result.user = existing_user
+          Rails.logger.info "DingTalk: Found existing user - #{existing_user.username} (ID: #{existing_user.id})"
+        else
+          result.failed = true
+          result.failed_reason = I18n.t("login.dingtalk.error")
+        end
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.error "DingTalk: Failed to create user - #{e.message}"
         Rails.logger.error e.backtrace.join("\n")
@@ -211,6 +247,16 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
       end
     end
 
+    # 🆕 多组织支持：记录用户的企业关联关系
+    if result.user.present?
+      track_organization_association(
+        user: result.user,
+        union_id: uid,
+        corp_id: auth_token.dig(:extra, :corp_id),
+        open_id: extra["openId"]
+      )
+    end
+
     # Handle email conflicts
     if SiteSetting.dingtalk_overrides_email && result.email.present?
       result.skip_email_validation = true
@@ -218,12 +264,22 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
 
     # Log authentication for debugging
     if SiteSetting.dingtalk_debug_auth
-      Rails.logger.info "DingTalk auth result: user_id=#{result.user&.id}, username=#{result.username}, email=#{result.email}, email_valid=#{result.email_valid}"
+      elapsed = ((Time.current - start_time) * 1000).round(2)  # Duration in milliseconds
+      Rails.logger.info "DingTalk auth result: user_id=#{result.user&.id}, username=#{result.username}, email=#{result.email}, email_valid=#{result.email_valid}, elapsed=#{elapsed}ms"
     end
 
     result
+  rescue Timeout::Error, Faraday::TimeoutError => e
+    elapsed = ((Time.current - start_time) * 1000).round(2) rescue 0
+    Rails.logger.error "DingTalk authentication timeout: #{e.class} - #{e.message} (elapsed: #{elapsed}ms)\n#{e.backtrace.join("\n")}"
+    result = Auth::Result.new
+    result.failed = true
+    result.failed_reason = I18n.t("login.dingtalk.timeout_error")
+    result
   rescue StandardError => e
-    Rails.logger.error "DingTalk authentication error: #{e.class} - #{e.message}\n#{e.backtrace.join("\n")}"
+    elapsed = ((Time.current - start_time) * 1000).round(2) rescue 0
+    Rails.logger.error "DingTalk authentication error: #{e.class} - #{e.message} (elapsed: #{elapsed}ms)\n#{e.backtrace.join("\n")}"
+    result = Auth::Result.new
     result.failed = true
     result.failed_reason = I18n.t("login.dingtalk.error")
     result
@@ -270,16 +326,93 @@ class DingtalkAuthenticator < Auth::ManagedAuthenticator
     return "" unless info
 
     begin
-      extra_data = JSON.parse(info.extra)
-      union_id = extra_data["dingtalk_union_id"]
-      I18n.t("login.dingtalk.description", union_id: union_id)
-    rescue JSON::ParserError => e
-      Rails.logger.warn "DingTalk: Failed to parse extra data for user #{user.id}: #{e.message}"
-      ""
+      # 从 info (JSON) 中获取全名
+      info_data = info.info.is_a?(Hash) ? info.info : JSON.parse(info.info)
+      full_name = info_data["name"] || info_data["nickname"] || ""
+
+      # 从 extra (JSON) 中获取 unionId
+      extra_data = info.extra.is_a?(Hash) ? info.extra : JSON.parse(info.extra)
+
+      # 尝试多个路径获取 unionId
+      union_id = extra_data.dig("raw_info", "unionId") ||
+                 extra_data["unionId"] ||
+                 extra_data["dingtalk_union_id"] || ""
+
+      # 脱敏处理 unionId（类似邮箱格式：显示前3后3，中间省略号）
+      obfuscated_union_id = obfuscate_union_id(union_id)
+
+      # 返回格式：全名_$unionid
+      if full_name.present? && obfuscated_union_id.present?
+        "#{full_name}_$#{obfuscated_union_id}"
+      else
+        I18n.t("login.dingtalk.connected")
+      end
+    rescue JSON::ParserError, StandardError => e
+      Rails.logger.warn "DingTalk: Failed to parse association data for user #{user.id}: #{e.message}"
+      I18n.t("login.dingtalk.connected")
     end
   end
 
   private
+
+  # 记录用户的企业关联关系（多组织支持）
+  # @param user [User] Discourse 用户对象
+  # @param union_id [String] 钉钉 UnionID
+  # @param corp_id [String] 钉钉企业ID
+  # @param open_id [String] 钉钉 OpenID（企业内唯一）
+  def track_organization_association(user:, union_id:, corp_id:, open_id:)
+    return unless SiteSetting.dingtalk_track_organizations
+    return unless corp_id.present? && union_id.present?
+
+    association = DingtalkUserOrganization.find_or_initialize_by(
+      user_id: user.id,
+      corp_id: corp_id
+    )
+
+    # 首次登录记录时间
+    association.first_login_at ||= Time.zone.now
+
+    # 更新最后登录时间和ID
+    association.last_login_at = Time.zone.now
+    association.union_id = union_id
+    association.open_id = open_id if open_id.present?
+
+    association.save!
+
+    Rails.logger.info "DingTalk: Tracked org association - user_id=#{user.id}, corp_id=#{corp_id}, union_id=#{union_id}"
+  rescue StandardError => e
+    Rails.logger.error "DingTalk: Failed to track org association - #{e.message}"
+    # 不阻断登录流程
+  end
+
+  # 检查企业是否被允许访问（企业访问控制）
+  # @param corp_id [String] 钉钉企业ID
+  # @return [Boolean]
+  def is_organization_allowed?(corp_id)
+    return true unless SiteSetting.dingtalk_track_organizations
+
+    # 检查黑名单
+    blocked = SiteSetting.dingtalk_blocked_corp_ids.split("|").map(&:strip).reject(&:blank?)
+    return false if blocked.include?(corp_id)
+
+    # 检查白名单 (如果配置了)
+    allowed = SiteSetting.dingtalk_allowed_corp_ids.split("|").map(&:strip).reject(&:blank?)
+    return true if allowed.empty? # 未配置白名单=允许所有
+
+    allowed.include?(corp_id)
+  end
+
+  # 脱敏处理 unionId（类似邮箱格式）
+  def obfuscate_union_id(union_id)
+    return "" if union_id.blank?
+
+    # 显示前3个和后3个字符，中间用...代替
+    if union_id.length <= 8
+      union_id # 太短直接显示
+    else
+      "#{union_id[0...3]}...#{union_id[-3..]}"
+    end
+  end
 
   # 检测是否为虚拟邮箱
   def virtual_email?(email)

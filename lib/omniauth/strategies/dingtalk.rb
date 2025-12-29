@@ -32,6 +32,10 @@ module OmniAuth
           grantType: "authorization_code"
         }
 
+        # Configure timeout for token request to prevent hanging on slow networks (VPN users)
+        client.connection.options.timeout = 10      # Total timeout: 10 seconds
+        client.connection.options.open_timeout = 5  # Connection timeout: 5 seconds
+
         response = client.request(:post, token_url, {
           body: params.to_json,
           headers: {
@@ -60,6 +64,9 @@ module OmniAuth
       rescue ::OAuth2::Error => e
         log_error("DingTalk OAuth token error: #{e.message}")
         raise e
+      rescue Timeout::Error, Faraday::TimeoutError => e
+        log_error("DingTalk token request timeout: #{e.class} - #{e.message}")
+        raise ::OAuth2::Error.new(response || nil)
       rescue JSON::ParserError => e
         log_error("DingTalk token response parse error: #{e.message}")
         raise ::OAuth2::Error.new(response || nil)
@@ -111,6 +118,10 @@ module OmniAuth
         @raw_info ||= begin
           return {} if access_token&.token.blank?
 
+          # Configure timeout for user info request to prevent hanging on slow networks (VPN users)
+          access_token.client.connection.options.timeout = 10      # Total timeout: 10 seconds
+          access_token.client.connection.options.open_timeout = 5  # Connection timeout: 5 seconds
+
           response = access_token.get(
             "/v1.0/contact/users/me",
             headers: {
@@ -136,6 +147,9 @@ module OmniAuth
           data
         rescue ::OAuth2::Error => e
           log_error("DingTalk user info OAuth error: #{e.message}")
+          {}
+        rescue Timeout::Error, Faraday::TimeoutError => e
+          log_error("DingTalk user info request timeout: #{e.class} - #{e.message}")
           {}
         rescue JSON::ParserError => e
           log_error("DingTalk user info parse error: #{e.message}")
