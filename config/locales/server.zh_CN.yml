@@ -38,3 +38,5 @@ zh_CN:
       missing_client_id: "钉钉Client ID未配置,请联系管理员"
       missing_client_secret: "钉钉Client Secret未配置,请联系管理员"
       organization_not_allowed: "您的企业无权访问此系统，请联系管理员"
+      dingtalk_service_busy: "当前登录人数较多，请稍候几秒后重试"
+      dingtalk_rate_limited: "请求过于频繁，请稍后重试"

@@ -38,3 +38,5 @@ en:
       missing_client_id: "DingTalk Client ID is not configured, please contact administrator"
       missing_client_secret: "DingTalk Client Secret is not configured, please contact administrator"
       organization_not_allowed: "Your organization is not authorized to access this system, please contact administrator"
+      dingtalk_service_busy: "Server is busy due to high login traffic, please retry in a few seconds"
+      dingtalk_rate_limited: "Too many requests, please try again later"
